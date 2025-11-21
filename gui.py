@@ -31,9 +31,13 @@ class App:
         self.manager = SearchManager()
         
         # Theme State
-        self.dark_mode = False
+        self.dark_mode = True # Enforce Dark Mode
         self.style = ttk.Style()
         self.style.theme_use('clam') # 'clam' supports color customization well
+        
+        # Console Window Reference
+        self.console_window = None
+        self.console_text = None
         
         self.create_widgets()
         self.update_search_list()
@@ -41,72 +45,39 @@ class App:
         # Apply initial theme
         self.apply_theme()
         
-        # Console Window Reference
-        self.console_window = None
-        self.console_text = None
-        
         # Start checking queue
         self.check_log_queue()
 
-    def toggle_theme(self):
-        self.dark_mode = not self.dark_mode
-        self.apply_theme()
-
     def apply_theme(self):
-        if self.dark_mode:
-            bg_color = "#2d2d2d"
-            fg_color = "#ffffff"
-            field_bg = "#3d3d3d"
-            select_bg = "#555555"
-            
-            self.root.configure(bg=bg_color)
-            self.style.configure(".", background=bg_color, foreground=fg_color, fieldbackground=field_bg)
-            self.style.configure("TLabel", background=bg_color, foreground=fg_color)
-            self.style.configure("TButton", background=field_bg, foreground=fg_color, borderwidth=1)
-            self.style.map("TButton", background=[("active", select_bg)])
-            self.style.configure("TEntry", fieldbackground=field_bg, foreground=fg_color)
-            self.style.configure("TCombobox", fieldbackground=field_bg, foreground=fg_color, arrowcolor=fg_color)
-            self.style.map("TCombobox", fieldbackground=[("readonly", field_bg)], selectbackground=[("readonly", select_bg)])
-            self.style.configure("TLabelframe", background=bg_color, foreground=fg_color)
-            self.style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
-            self.style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
-            
-            # Treeview
-            self.style.configure("Treeview", background=field_bg, foreground=fg_color, fieldbackground=field_bg)
-            self.style.map("Treeview", background=[("selected", select_bg)], foreground=[("selected", fg_color)])
-            self.style.configure("Treeview.Heading", background=bg_color, foreground=fg_color, relief="flat")
-            self.style.map("Treeview.Heading", background=[("active", select_bg)])
-            
-        else:
-            # Light Mode (Default 'clam' colors or system default)
-            # Resetting to default 'clam' is easiest by just clearing specific configs or setting standard light colors
-            bg_color = "#f0f0f0"
-            fg_color = "#000000"
-            field_bg = "#ffffff"
-            select_bg = "#0078d7"
-            
-            self.root.configure(bg=bg_color)
-            self.style.configure(".", background=bg_color, foreground=fg_color, fieldbackground=field_bg)
-            self.style.configure("TLabel", background=bg_color, foreground=fg_color)
-            self.style.configure("TButton", background="#e1e1e1", foreground=fg_color, borderwidth=1)
-            self.style.map("TButton", background=[("active", "#c7c7c7")])
-            self.style.configure("TEntry", fieldbackground=field_bg, foreground=fg_color)
-            self.style.configure("TCombobox", fieldbackground=field_bg, foreground=fg_color, arrowcolor=fg_color)
-            self.style.map("TCombobox", fieldbackground=[("readonly", field_bg)], selectbackground=[("readonly", select_bg)])
-            self.style.configure("TLabelframe", background=bg_color, foreground=fg_color)
-            self.style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
-            self.style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
-            
-            # Treeview
-            self.style.configure("Treeview", background=field_bg, foreground=fg_color, fieldbackground=field_bg)
-            self.style.map("Treeview", background=[("selected", select_bg)], foreground=[("selected", "#ffffff")])
-            self.style.configure("Treeview.Heading", background="#e1e1e1", foreground=fg_color, relief="raised")
-            self.style.map("Treeview.Heading", background=[("active", "#c7c7c7")])
+        # Always Dark Mode
+        bg_color = "#2d2d2d"
+        fg_color = "#ffffff"
+        field_bg = "#3d3d3d"
+        select_bg = "#555555"
+        border_color = "#555555"
+        
+        self.root.configure(bg=bg_color)
+        self.style.configure(".", background=bg_color, foreground=fg_color, fieldbackground=field_bg)
+        self.style.configure("TLabel", background=bg_color, foreground=fg_color)
+        self.style.configure("TButton", background=field_bg, foreground=fg_color, borderwidth=1, bordercolor=border_color, lightcolor=border_color, darkcolor=border_color)
+        self.style.map("TButton", background=[("active", select_bg)])
+        self.style.configure("TEntry", fieldbackground=field_bg, foreground=fg_color, bordercolor=border_color, lightcolor=border_color, darkcolor=border_color)
+        self.style.configure("TCombobox", fieldbackground=field_bg, foreground=fg_color, arrowcolor=fg_color, bordercolor=border_color, lightcolor=border_color, darkcolor=border_color)
+        self.style.map("TCombobox", fieldbackground=[("readonly", field_bg)], selectbackground=[("readonly", select_bg)])
+        self.style.configure("TLabelframe", background=bg_color, foreground=fg_color, bordercolor=border_color, lightcolor=border_color, darkcolor=border_color)
+        self.style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
+        self.style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
+        
+        # Treeview
+        self.style.configure("Treeview", background=field_bg, foreground=fg_color, fieldbackground=field_bg, bordercolor=border_color)
+        self.style.map("Treeview", background=[("selected", select_bg)], foreground=[("selected", fg_color)])
+        self.style.configure("Treeview.Heading", background=bg_color, foreground=fg_color, relief="flat")
+        self.style.map("Treeview.Heading", background=[("active", select_bg)])
 
         # Update Console Window if open
         if self.console_text:
-            c_bg = "#1e1e1e" if self.dark_mode else "#ffffff"
-            c_fg = "#ffffff" if self.dark_mode else "#000000"
+            c_bg = "#1e1e1e"
+            c_fg = "#ffffff"
             self.console_text.configure(bg=c_bg, fg=c_fg)
             if self.console_window:
                 self.console_window.configure(bg=bg_color)
@@ -134,11 +105,11 @@ class App:
         self.console_window.geometry("600x400")
         
         # Apply current theme bg
-        bg_color = "#2d2d2d" if self.dark_mode else "#f0f0f0"
+        bg_color = "#2d2d2d"
         self.console_window.configure(bg=bg_color)
         
-        c_bg = "#1e1e1e" if self.dark_mode else "#ffffff"
-        c_fg = "#ffffff" if self.dark_mode else "#000000"
+        c_bg = "#1e1e1e"
+        c_fg = "#ffffff"
         
         self.console_text = tk.Text(self.console_window, state="disabled", wrap="word", bg=c_bg, fg=c_fg, font=("Consolas", 9))
         self.console_text.pack(fill="both", expand=True)
@@ -186,16 +157,18 @@ class App:
         list_frame = ttk.LabelFrame(self.root, text="Aktive Suchen", padding="10")
         list_frame.pack(fill="both", expand=True, padx=10, pady=5)
         
-        columns = ("query", "location", "category", "filter", "notify")
+        columns = ("query", "location", "radius", "category", "filter", "notify")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings")
         self.tree.heading("query", text="Suchbegriff")
         self.tree.heading("location", text="Ort")
+        self.tree.heading("radius", text="Radius")
         self.tree.heading("category", text="Kategorie")
         self.tree.heading("filter", text="Filter")
         self.tree.heading("notify", text="Benachrichtigung")
         
         self.tree.column("query", width=150)
         self.tree.column("location", width=100)
+        self.tree.column("radius", width=60)
         self.tree.column("category", width=150)
         self.tree.column("filter", width=150)
         self.tree.column("notify", width=100)
@@ -228,21 +201,41 @@ class App:
         
         ttk.Button(control_frame, text="Konsole", command=self.show_console).pack(side="right", padx=5)
         ttk.Button(control_frame, text="Toggle Notify", command=self.toggle_notify).pack(side="right", padx=5)
+        ttk.Button(control_frame, text="Bearbeiten", command=self.edit_search).pack(side="right", padx=5)
         ttk.Button(control_frame, text="Löschen", command=self.delete_search).pack(side="right", padx=5)
         
-        # Dark Mode Toggle (Top Right of Control Frame or Menu? Let's put it in Control Frame for now)
-        ttk.Button(control_frame, text="Dark Mode", command=self.toggle_theme).pack(side="right", padx=5)
+        # Progress Bar
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(self.root, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill="x", padx=2, pady=2, side="bottom")
 
         # Status Bar
         self.status_var = tk.StringVar()
         self.status_var.set("Bereit")
         status_bar = ttk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w")
         status_bar.pack(fill="x", side="bottom")
+        
+        # Connect callback
+        self.manager.set_progress_callback(self.on_progress)
+
+    def on_progress(self, value):
+        self.root.after(0, self.update_progress, value)
+
+    def update_progress(self, value):
+        self.progress_var.set(value)
+        if value >= 100:
+            self.status_var.set(f"Scan abgeschlossen. Warte auf nächstes Intervall...")
+        elif value > 0:
+             self.status_var.set(f"Scanne... {int(value)}%")
 
     def show_results(self):
         top = tk.Toplevel(self.root)
         top.title("Gefundene Ergebnisse")
         top.geometry("800x600")
+        
+        # Apply theme to results window
+        if self.dark_mode:
+            top.configure(bg="#2d2d2d")
         
         columns = ("title", "price", "location", "link")
         tree = ttk.Treeview(top, columns=columns, show="headings")
@@ -311,6 +304,41 @@ class App:
             
         self.update_search_list()
 
+    def edit_search(self):
+        selected = self.tree.selection()
+        if not selected:
+            return
+        
+        # Only edit the first selected item to avoid confusion
+        item = selected[0]
+        index = self.tree.index(item)
+        search = self.manager.searches[index]
+        
+        # Populate inputs
+        self.entry_query.delete(0, "end")
+        self.entry_query.insert(0, search['query'])
+        
+        self.entry_location.delete(0, "end")
+        self.entry_location.insert(0, search['location'])
+        
+        self.entry_radius.delete(0, "end")
+        self.entry_radius.insert(0, search['radius'])
+        
+        cat_id = search.get('category_id', "0")
+        cat_name = next((k for k, v in CATEGORIES.items() if v == cat_id), "Alle Kategorien")
+        self.combo_category.set(cat_name)
+        
+        self.entry_filter.delete(0, "end")
+        self.entry_filter.insert(0, ", ".join(search.get('filter_keywords', [])))
+        
+        self.var_notify.set(search.get('notifications', True))
+        
+        # Remove old entry
+        self.manager.remove_search(index)
+        self.update_search_list()
+        
+        messagebox.showinfo("Bearbeiten", "Eintrag geladen. Bitte ändern und auf 'Hinzufügen' klicken.")
+
     def toggle_notify(self):
         selected = self.tree.selection()
         if not selected:
@@ -333,7 +361,7 @@ class App:
             filters = ", ".join(search.get('filter_keywords', []))
             notify_status = "An" if search.get('notifications', True) else "Aus"
             
-            self.tree.insert("", "end", values=(search['query'], search['location'], cat_name, filters, notify_status))
+            self.tree.insert("", "end", values=(search['query'], search['location'], search['radius'], cat_name, filters, notify_status))
 
     def start_bot(self):
         try:

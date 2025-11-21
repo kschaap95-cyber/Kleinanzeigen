@@ -2,6 +2,7 @@ import json
 import threading
 import time
 import os
+import random
 from plyer import notification
 from scraper import KleinanzeigenScraper
 
@@ -16,6 +17,11 @@ class SearchManager:
         self.thread = None
         self.interval = 60 * 5  # 5 Minutes default
         self.load_config()
+        self.found_ads = [] # Store found ads in memory for the session
+        self.progress_callback = None
+
+    def set_progress_callback(self, callback):
+        self.progress_callback = callback
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
@@ -27,7 +33,7 @@ class SearchManager:
                     self.interval = data.get('interval', 300)
             except Exception as e:
                 print(f"Error loading config: {e}")
-        self.found_ads = [] # Store found ads in memory for the session
+        self.found_ads = [] 
 
     def save_config(self):
         data = {
@@ -80,11 +86,22 @@ class SearchManager:
 
     def _loop(self):
         while self.running:
-            print("Checking for new ads...")
-            for search in self.searches:
-                if not search.get('active', True):
-                    continue
+            active_searches = [s for s in self.searches if s.get('active', True)]
+            total_searches = len(active_searches)
+            print(f"Checking for new ads... ({total_searches} active searches)")
+            
+            if self.progress_callback:
+                self.progress_callback(0)
+
+            for i, search in enumerate(active_searches):
+                if not self.running:
+                    break
                 
+                # Report progress start of item
+                if self.progress_callback:
+                    progress = int((i / total_searches) * 100)
+                    self.progress_callback(progress)
+
                 query = search['query']
                 location = search['location']
                 radius = search['radius']
@@ -94,65 +111,78 @@ class SearchManager:
                 first_run = search.get('first_run', False)
                 
                 print(f"Searching for {query} in {location} (Cat: {category_id})")
-                results = self.scraper.search(query, location, radius, category_id)
-                
-                print(f"Found {len(results)} ads for {query}")
-                
-                new_count = 0
-                for ad in results:
-                    # STRICT CHECK: The main query MUST be present in Title or Description
-                    match_query = False
-                    if query.lower() in ad['title'].lower():
-                        match_query = True
-                    else:
-                        print(f"Query '{query}' not in title '{ad['title']}', checking description...")
-                        desc = self.scraper.get_ad_details(ad['link'])
-                        if query.lower() in desc.lower():
-                            match_query = True
+                try:
+                    results = self.scraper.search(query, location, radius, category_id)
+                    print(f"Found {len(results)} ads for {query}")
                     
-                    if not match_query:
-                        continue
-
-                    # Check filter keywords if present
-                    if filter_keywords:
-                        match_filter = False
-                        if any(k.lower() in ad['title'].lower() for k in filter_keywords):
-                            match_filter = True
+                    new_count = 0
+                    for ad in results:
+                        # STRICT CHECK: The main query MUST be present in Title or Description
+                        match_query = False
+                        if query.lower() in ad['title'].lower():
+                            match_query = True
                         else:
-                            print(f"Checking description for filter in {ad['title']}...")
+                            # print(f"Query '{query}' not in title '{ad['title']}', checking description...")
                             desc = self.scraper.get_ad_details(ad['link'])
-                            if any(k.lower() in desc.lower() for k in filter_keywords):
+                            if query.lower() in desc.lower():
+                                match_query = True
+                        
+                        if not match_query:
+                            continue
+
+                        # Check filter keywords if present
+                        if filter_keywords:
+                            match_filter = False
+                            if any(k.lower() in ad['title'].lower() for k in filter_keywords):
                                 match_filter = True
-                        
-                        if not match_filter:
-                            continue 
+                            else:
+                                # print(f"Checking description for filter in {ad['title']}...")
+                                desc = self.scraper.get_ad_details(ad['link'])
+                                if any(k.lower() in desc.lower() for k in filter_keywords):
+                                    match_filter = True
+                            
+                            if not match_filter:
+                                continue 
 
-                    # Add to session results if not already present
-                    if not any(existing['id'] == ad['id'] for existing in self.found_ads):
-                        self.found_ads.append(ad)
+                        # Add to session results if not already present
+                        if not any(existing['id'] == ad['id'] for existing in self.found_ads):
+                            self.found_ads.append(ad)
 
-                    ad_id = ad['id']
-                    if ad_id not in self.seen_ads:
-                        self.seen_ads.add(ad_id)
-                        new_count += 1
-                        
-                        # Notify only if enabled and NOT first run
-                        if notifications_enabled and not first_run:
-                            self.notify_new_ad(ad)
+                        ad_id = ad['id']
+                        if ad_id not in self.seen_ads:
+                            self.seen_ads.add(ad_id)
+                            new_count += 1
+                            
+                            # Notify only if enabled and NOT first run
+                            if notifications_enabled and not first_run:
+                                self.notify_new_ad(ad)
+                    
+                    if new_count > 0:
+                        print(f"Found {new_count} new ads for {query}")
+                    
+                    # After processing, disable first_run flag
+                    if first_run:
+                        search['first_run'] = False
+                        self.save_config() 
                 
-                if new_count > 0:
-                    print(f"Found {new_count} new ads for {query}")
-                
-                # After processing, disable first_run flag
-                if first_run:
-                    search['first_run'] = False
-                    self.save_config() # Persist the change so we don't skip next time if restarted immediately (though first_run is usually transient)
-                
+                except Exception as e:
+                    print(f"Error processing search '{query}': {e}")
+
                 # Short pause between searches
-                time.sleep(5)
+                time.sleep(random.uniform(2, 5) if 'random' in globals() else 3)
+                
+                # Report progress end of item
+                if self.progress_callback:
+                    progress = int(((i + 1) / total_searches) * 100)
+                    self.progress_callback(progress)
             
+            # Loop finished
+            if self.progress_callback:
+                self.progress_callback(100)
+
             self.save_config()
             
+            print(f"Scan complete. Waiting {self.interval} seconds...")
             # Wait for interval
             for _ in range(self.interval):
                 if not self.running:
