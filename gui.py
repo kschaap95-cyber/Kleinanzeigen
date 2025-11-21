@@ -73,6 +73,9 @@ class App:
         self.style.map("Treeview", background=[("selected", select_bg)], foreground=[("selected", fg_color)])
         self.style.configure("Treeview.Heading", background=bg_color, foreground=fg_color, relief="flat")
         self.style.map("Treeview.Heading", background=[("active", select_bg)])
+        
+        # Progressbar - Green when active
+        self.style.configure("green.Horizontal.TProgressbar", troughcolor=field_bg, background="#00ff00", lightcolor="#00ff00", darkcolor="#00aa00")
 
         # Update Console Window if open
         if self.console_text:
@@ -206,7 +209,7 @@ class App:
         
         # Progress Bar
         self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(self.root, variable=self.progress_var, maximum=100)
+        self.progress_bar = ttk.Progressbar(self.root, variable=self.progress_var, maximum=100, style="green.Horizontal.TProgressbar")
         self.progress_bar.pack(fill="x", padx=2, pady=2, side="bottom")
 
         # Status Bar
@@ -217,60 +220,151 @@ class App:
         
         # Connect callback
         self.manager.set_progress_callback(self.on_progress)
+        
+        # Progress animation state
+        self.target_progress = 0
+        self.current_progress = 0
+        self.animating = False
 
     def on_progress(self, value):
-        self.root.after(0, self.update_progress, value)
+        """Called from background thread"""
+        self.root.after(0, self.set_target_progress, value)
 
-    def update_progress(self, value):
-        self.progress_var.set(value)
-        if value >= 100:
-            self.status_var.set(f"Scan abgeschlossen. Warte auf nächstes Intervall...")
-        elif value > 0:
-             self.status_var.set(f"Scanne... {int(value)}%")
+    def set_target_progress(self, value):
+        """Set new target and start animation if needed"""
+        self.target_progress = value
+        if not self.animating:
+            self.animating = True
+            self.animate_progress()
+
+    def animate_progress(self):
+        """Smoothly animate progress bar to target value"""
+        if self.current_progress < self.target_progress:
+            # Increment by small steps for smooth animation
+            step = max(1, (self.target_progress - self.current_progress) / 10)
+            self.current_progress = min(self.current_progress + step, self.target_progress)
+            
+            self.progress_var.set(self.current_progress)
+            
+            if self.current_progress >= 100:
+                self.status_var.set(f"Scan abgeschlossen. Warte auf nächstes Intervall...")
+            elif self.current_progress > 0:
+                self.status_var.set(f"Scanne... {int(self.current_progress)}%")
+            
+            # Continue animation
+            self.root.after(50, self.animate_progress)
+        else:
+            # Animation complete
+            self.animating = False
+            self.progress_var.set(self.target_progress)
+            
+            if self.target_progress >= 100:
+                self.status_var.set(f"Scan abgeschlossen. Warte auf nächstes Intervall...")
+            elif self.target_progress > 0:
+                self.status_var.set(f"Scanne... {int(self.target_progress)}%")
 
     def show_results(self):
         top = tk.Toplevel(self.root)
         top.title("Gefundene Ergebnisse")
-        top.geometry("800x600")
+        top.geometry("900x650")
         
         # Apply theme to results window
-        if self.dark_mode:
-            top.configure(bg="#2d2d2d")
+        bg_color = "#2d2d2d"
+        top.configure(bg=bg_color)
         
-        columns = ("title", "price", "location", "link")
-        tree = ttk.Treeview(top, columns=columns, show="headings")
+        # Filter Frame
+        filter_frame = ttk.Frame(top, padding="5")
+        filter_frame.pack(fill="x", padx=5, pady=5)
+        
+        ttk.Label(filter_frame, text="Filter:").pack(side="left", padx=5)
+        filter_entry = ttk.Entry(filter_frame, width=40)
+        filter_entry.pack(side="left", padx=5, fill="x", expand=True)
+        
+        # Treeview Frame
+        tree_frame = ttk.Frame(top)
+        tree_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        columns = ("title", "price", "location", "distance", "link")
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
         tree.heading("title", text="Titel")
         tree.heading("price", text="Preis")
         tree.heading("location", text="Ort")
+        tree.heading("distance", text="Entfernung")
         tree.heading("link", text="Link")
         
         tree.column("title", width=300)
-        tree.column("price", width=100)
+        tree.column("price", width=80)
         tree.column("location", width=150)
+        tree.column("distance", width=80)
         tree.column("link", width=200)
         
-        tree.pack(fill="both", expand=True)
+        tree.pack(fill="both", expand=True, side="left")
         
-        scrollbar = ttk.Scrollbar(top, orient="vertical", command=tree.yview)
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         scrollbar.pack(side="right", fill="y")
         tree.configure(yscrollcommand=scrollbar.set)
         
-        # Populate
-        for ad in self.manager.found_ads:
-            tree.insert("", "end", values=(ad['title'], ad['price'], ad['location'], ad['link']))
+        # Sort ads by distance
+        def extract_distance(location_str):
+            """Extract distance in km from location string"""
+            import re
+            match = re.search(r'(\d+)\s*km', location_str)
+            if match:
+                return int(match.group(1))
+            return 999999  # Put items without distance at the end
+        
+        sorted_ads = sorted(self.manager.found_ads, key=lambda ad: extract_distance(ad.get('location', '')))
+        
+        # Store all ads with their data
+        all_ads_data = []
+        for ad in sorted_ads:
+            distance = extract_distance(ad.get('location', ''))
+            distance_str = f"{distance} km" if distance < 999999 else "N/A"
+            all_ads_data.append({
+                'title': ad['title'],
+                'price': ad['price'],
+                'location': ad['location'],
+                'distance': distance_str,
+                'link': ad['link'],
+                'distance_val': distance
+            })
+        
+        def populate_tree(filter_text=""):
+            """Populate tree with filtered results"""
+            tree.delete(*tree.get_children())
+            filter_lower = filter_text.lower()
             
+            for ad_data in all_ads_data:
+                if not filter_lower or filter_lower in ad_data['title'].lower():
+                    tree.insert("", "end", values=(
+                        ad_data['title'],
+                        ad_data['price'],
+                        ad_data['location'],
+                        ad_data['distance'],
+                        ad_data['link']
+                    ))
+        
+        # Initial population
+        populate_tree()
+        
+        # Filter on key release
+        def on_filter_change(event):
+            populate_tree(filter_entry.get())
+        
+        filter_entry.bind("<KeyRelease>", on_filter_change)
+        
         def on_double_click(event):
             item = tree.selection()
             if not item:
                 return
             values = tree.item(item, "values")
-            link = values[3]
+            link = values[4]  # Link is now at index 4
             import webbrowser
             webbrowser.open(link)
             
         tree.bind("<Double-1>", on_double_click)
         
-        ttk.Label(top, text="Doppelklick auf Eintrag öffnet Link").pack(pady=5)
+        ttk.Label(top, text="Doppelklick auf Eintrag öffnet Link | Filter durchsucht Titel").pack(pady=5)
 
     def add_search(self):
         query = self.entry_query.get()
